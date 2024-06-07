@@ -4,25 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
-
 	"github.com/markphelps/optional"
 )
 
 const (
-	interfaceEndpoint        = "api/v2/interface"
-	interfacesEndpoint       = "api/v2/interfaces"
-	interfaceVLANEndpoint    = "api/v2/interface/vlan"
-	interfaceVLANsEndpoint   = "api/v2/interface/vlans"
-	interfaceGroupEndpoint   = "api/v2/interface/group"
-	interfaceGroupsEndpoint  = "api/v2/interface/groups"
-	interfaceBridgeEndpoint  = "api/v2/interface/bridge"
-	interfaceBridgesEndpoint = "api/v2/interface/bridges"
-	interfaceApplyEndpoint   = "api/v2/interface/apply"
+	interfaceEndpoint  = "api/v2/interface"
+	interfacesEndpoint = "api/v2/interfaces"
 )
 
-// InterfaceService provides interface API methods
-type InterfaceService service
+type interfacesClient interface {
+	GetInterface(ctx context.Context, id string) (*Interface, error)
+	GetInterfaces(ctx context.Context) ([]*Interface, error)
+	DeleteInterface(ctx context.Context, id string) error
+	UpdateInterface(ctx context.Context, id string, interf InterfaceRequest) (*Interface, error)
+}
 
 type Interface struct {
 	InterfaceRequest
@@ -35,8 +30,8 @@ type interfaceListResponse struct {
 }
 
 // GetInterface returns a single interface.
-func (s InterfaceService) GetInterface(ctx context.Context, interfaceID string) (*Interface, error) {
-	response, err := s.client.get(
+func (c *client) GetInterface(ctx context.Context, interfaceID string) (*Interface, error) {
+	response, err := c.get(
 		ctx,
 		interfaceEndpoint,
 		map[string]string{
@@ -54,9 +49,9 @@ func (s InterfaceService) GetInterface(ctx context.Context, interfaceID string) 
 	return resp.Data, nil
 }
 
-// ListInterfaces returns a list of the interfaces.
-func (s InterfaceService) ListInterfaces(ctx context.Context) ([]*Interface, error) {
-	response, err := s.client.get(ctx, interfacesEndpoint, nil)
+// GetInterfaces returns a list of the interfaces.
+func (c *client) GetInterfaces(ctx context.Context) ([]*Interface, error) {
+	response, err := c.get(ctx, interfacesEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -72,24 +67,16 @@ func (s InterfaceService) ListInterfaces(ctx context.Context) ([]*Interface, err
 // DeleteInterface deletes the interface. The interfaceID can be specified in
 // either the interface's descriptive name, the pfSense ID (wan, lan, optx), or
 // the physical interface id (e.g. igb0).
-func (s InterfaceService) DeleteInterface(ctx context.Context, interfaceID string) (*Interface, error) {
-	response, err := s.client.delete(
+func (c *client) DeleteInterface(ctx context.Context, interfaceID string) error {
+	_, err := c.delete(
 		ctx,
 		interfaceEndpoint,
 		map[string]string{
 			"if": interfaceID,
 		},
 	)
-	if err != nil {
-		return nil, err
-	}
 
-	resp := new(createInterfaceResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return resp.Data, nil
+	return err
 }
 
 type InterfaceRequest struct {
@@ -135,7 +122,7 @@ type createInterfaceResponse struct {
 }
 
 // CreateInterface creates a new interface.
-func (s InterfaceService) CreateInterface(
+func (c *client) CreateInterface(
 	ctx context.Context,
 	newInterface InterfaceRequest,
 ) (*Interface, error) {
@@ -144,7 +131,7 @@ func (s InterfaceService) CreateInterface(
 		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
 	}
 
-	response, err := s.client.post(ctx, interfaceEndpoint, nil, jsonData)
+	response, err := c.post(ctx, interfaceEndpoint, nil, jsonData)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +144,7 @@ func (s InterfaceService) CreateInterface(
 }
 
 // UpdateInterface modifies an existing interface.
-func (s InterfaceService) UpdateInterface(
+func (c *client) UpdateInterface(
 	ctx context.Context,
 	idToUpdate string,
 	interfaceData InterfaceRequest,
@@ -172,7 +159,7 @@ func (s InterfaceService) UpdateInterface(
 		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
 	}
 
-	response, err := s.client.patch(ctx, interfaceEndpoint, nil, jsonData)
+	response, err := c.patch(ctx, interfaceEndpoint, nil, jsonData)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling response: %w", err)
 	}
@@ -182,423 +169,4 @@ func (s InterfaceService) UpdateInterface(
 		return nil, err
 	}
 	return resp.Data, nil
-}
-
-// VLAN represents a single VLAN.
-type VLAN struct {
-	VLANRequest
-	Id int `json:"id"`
-}
-
-type vlanListResponse struct {
-	apiResponse
-	Data []*VLAN `json:"data"`
-}
-
-// ListVLANs returns the VLANs
-func (s InterfaceService) ListVLANs(ctx context.Context) ([]*VLAN, error) {
-	response, err := s.client.get(ctx, interfaceVLANsEndpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(vlanListResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return resp.Data, nil
-}
-
-// GetVLAN returns the VLAN with the given ID.
-func (s InterfaceService) GetVLAN(ctx context.Context, id int) (*VLAN, error) {
-	response, err := s.client.get(
-		ctx,
-		interfaceVLANEndpoint,
-		map[string]string{
-			"id": strconv.Itoa(id),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(createVLANResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// DeleteVLAN deletes a VLAN.
-func (s InterfaceService) DeleteVLAN(ctx context.Context, idToDelete int) (*VLAN, error) {
-	response, err := s.client.delete(
-		ctx,
-		interfaceVLANEndpoint,
-		map[string]string{
-			"id": strconv.Itoa(idToDelete),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(createVLANResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-type VLANRequest struct {
-	If     string           `json:"if"`
-	Tag    int              `json:"tag"`
-	Vlanif *optional.String `json:"vlanif,omitempty"`
-	Pcp    *optional.Int    `json:"pcp,omitempty"`
-	Descr  *optional.String `json:"descr,omitempty"`
-}
-
-type createVLANResponse struct {
-	apiResponse
-	Data *VLAN `json:"data"`
-}
-
-// CreateVLAN creates a new VLAN.
-func (s InterfaceService) CreateVLAN(
-	ctx context.Context,
-	newVLAN VLANRequest,
-) (*VLAN, error) {
-	jsonData, err := json.Marshal(newVLAN)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.post(ctx, interfaceVLANEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	resp := new(createVLANResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// UpdateVLAN modifies an existing VLAN.
-func (s InterfaceService) UpdateVLAN(
-	ctx context.Context,
-	idToUpdate int,
-	vlanData VLANRequest,
-) (*VLAN, error) {
-	requestData := VLAN{
-		VLANRequest: vlanData,
-		Id:          idToUpdate,
-	}
-
-	jsonData, err := json.Marshal(requestData)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.patch(ctx, interfaceVLANEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(createVLANResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-type InterfaceGroup struct {
-	InterfaceGroupRequest
-	Id int `json:"id"`
-}
-
-type interfaceGroupListResponse struct {
-	apiResponse
-	Data []*InterfaceGroup `json:"data"`
-}
-
-// ListInterfaceGroups returns the interface groups.
-func (s InterfaceService) ListInterfaceGroups(ctx context.Context) ([]*InterfaceGroup, error) {
-	response, err := s.client.get(ctx, interfaceGroupsEndpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupListResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return resp.Data, nil
-}
-
-// PutInterfaceGroups replaces all interface groups with the given list.
-func (s InterfaceService) PutInterfaceGroups(ctx context.Context, groups []*InterfaceGroupRequest) ([]*InterfaceGroup, error) {
-	jsonData, err := json.Marshal(groups)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.put(ctx, interfaceGroupsEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupListResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return resp.Data, nil
-}
-
-// GetInterfaceGroup returns the interface group with the given ID.
-func (s InterfaceService) GetInterfaceGroup(ctx context.Context, id int) (*InterfaceGroup, error) {
-	response, err := s.client.get(
-		ctx,
-		interfaceGroupEndpoint,
-		map[string]string{
-			"id": strconv.Itoa(id),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-
-}
-
-// DeleteInterfaceGroup deletes an interface group.
-func (s InterfaceService) DeleteInterfaceGroup(ctx context.Context, idToDelete int) (*InterfaceGroup, error) {
-	response, err := s.client.delete(
-		ctx,
-		interfaceGroupEndpoint,
-		map[string]string{
-			"id": strconv.Itoa(idToDelete),
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// InterfaceGroupRequest represents the request to create or update an interface group.
-type InterfaceGroupRequest struct {
-	Ifname  string   `json:"ifname"`
-	Members []string `json:"members"`
-	Descr   string   `json:"descr"`
-}
-
-type interfaceGroupResponse struct {
-	apiResponse
-	Data *InterfaceGroup `json:"data"`
-}
-
-// CreateInterfaceGroup creates a new interface group.
-func (s InterfaceService) CreateInterfaceGroup(
-	ctx context.Context,
-	newGroup InterfaceGroupRequest,
-) (*InterfaceGroup, error) {
-	jsonData, err := json.Marshal(newGroup)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-	response, err := s.client.post(ctx, interfaceGroupEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// UpdateInterfaceGroup updates an existing interface group.
-func (s InterfaceService) UpdateInterfaceGroup(
-	ctx context.Context,
-	idToUpdate int,
-	groupData InterfaceGroupRequest,
-) (*InterfaceGroup, error) {
-	requestData := InterfaceGroup{
-		InterfaceGroupRequest: groupData,
-		Id:                    idToUpdate,
-	}
-
-	jsonData, err := json.Marshal(requestData)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.patch(ctx, interfaceGroupEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceGroupResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// Apply applies pending interface changes
-func (s InterfaceService) Apply(ctx context.Context) error {
-	response, err := s.client.post(ctx, interfaceApplyEndpoint, nil, nil)
-	if err != nil {
-		return err
-	}
-
-	resp := new(apiResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return nil
-}
-
-// InterfaceBridge represents a single bridge.
-type InterfaceBridge struct {
-	InterfaceBridgeRequest
-	Id string `json:"id"`
-}
-
-type interfaceBridgeListResponse struct {
-	apiResponse
-	Data []*InterfaceBridge `json:"data"`
-}
-
-// ListInterfaceBridges returns the bridges.
-func (s InterfaceService) ListInterfaceBridges(ctx context.Context) ([]*InterfaceBridge, error) {
-	response, err := s.client.get(ctx, interfaceBridgesEndpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceBridgeListResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-
-	return resp.Data, nil
-}
-
-type interfaceBridgeResponse struct {
-	apiResponse
-	Data *InterfaceBridge `json:"data"`
-}
-
-// GetInterfaceBridge returns the bridge with the given ID.
-func (s InterfaceService) GetInterfaceBridge(ctx context.Context, id string) (*InterfaceBridge, error) {
-	response, err := s.client.get(
-		ctx,
-		interfaceBridgeEndpoint,
-		map[string]string{
-			"id": id,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceBridgeResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// DeleteInterfaceBridge deletes a bridge.
-func (s InterfaceService) DeleteInterfaceBridge(ctx context.Context, idToDelete string) (*InterfaceBridge, error) {
-	response, err := s.client.delete(
-		ctx,
-		interfaceBridgeEndpoint,
-		map[string]string{
-			"id": idToDelete,
-		},
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceBridgeResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// CreateInterfaceBridge creates a new bridge.
-func (s InterfaceService) CreateInterfaceBridge(
-	ctx context.Context,
-	newBridge InterfaceBridgeRequest,
-) (*InterfaceBridge, error) {
-	jsonData, err := json.Marshal(newBridge)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.post(ctx, interfaceBridgeEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceBridgeResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// UpdateInterfaceBridge updates an existing bridge.
-func (s InterfaceService) UpdateInterfaceBridge(
-	ctx context.Context,
-	idToUpdate string,
-	bridgeData InterfaceBridgeRequest,
-) (*InterfaceBridge, error) {
-	requestData := InterfaceBridge{
-		InterfaceBridgeRequest: bridgeData,
-		Id:                     idToUpdate,
-	}
-
-	jsonData, err := json.Marshal(requestData)
-	if err != nil {
-		return nil, fmt.Errorf("error marshalling request payload into json: %w", err)
-	}
-
-	response, err := s.client.patch(ctx, interfaceBridgeEndpoint, nil, jsonData)
-	if err != nil {
-		return nil, err
-	}
-
-	resp := new(interfaceBridgeResponse)
-	if err = json.Unmarshal(response, resp); err != nil {
-		return nil, fmt.Errorf("error unmarshalling response: %w", err)
-	}
-	return resp.Data, nil
-}
-
-// InterfaceBridgeRequest represents the request to create or update a bridge.
-type InterfaceBridgeRequest struct {
-	Members  []string `json:"members"`
-	Descr    string   `json:"descr"`
-	Bridgeif string   `json:"bridgeif"`
 }
