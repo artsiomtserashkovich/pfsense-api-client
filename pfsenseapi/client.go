@@ -41,6 +41,7 @@ func New(opts ...Options) (Client, error) {
 			},
 		},
 	}
+	newClient.client.CloseIdleConnections()
 
 	return newClient, nil
 }
